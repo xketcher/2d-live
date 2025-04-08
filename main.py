@@ -1,112 +1,82 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
-import asyncio
 import requests
+import asyncio
 from bs4 import BeautifulSoup
+from typing import Set
 
 app = FastAPI()
-
-clients = set()
-clients_lock = asyncio.Lock()
-broadcasting = False
-broadcast_event = asyncio.Event()
+connected_clients: Set[WebSocket] = set()
+is_running: bool = False
 
 @app.get("/start")
-async def start_broadcast():
-    global broadcasting
-    broadcasting = True
-    broadcast_event.set()
-    return JSONResponse(content={"status": "started"})
+async def start_stream():
+    global is_running
+    is_running = True
+    return {"status": "started"}
 
 @app.get("/stop")
-async def stop_broadcast():
-    global broadcasting
-    broadcasting = False
-    return JSONResponse(content={"status": "stopped"})
+async def stop_stream():
+    global is_running
+    is_running = False
+    return {"status": "stopped"}
 
-@app.get("/ping")
-async def ping():
-    return JSONResponse(content={"status": "ok"})
+@app.get("/get")
+async def get_current_data():
+    return await fetch_set_data()
+
+@app.post("/send")
+async def broadcast_data(data: dict):
+    global is_running
+    is_running = False
+    disconnected = set()
+    for client in connected_clients:
+        try:
+            await client.send_json(data)
+        except Exception:
+            disconnected.add(client)
+    connected_clients.difference_update(disconnected)
+    # return {"status": "sent", "disconnected_clients": len(disconnected)}
+    return await fetch_set_data()
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    async with clients_lock:
-        clients.add(websocket)
+    connected_clients.add(websocket)
     try:
-        await websocket.receive_text()  # Keep connection alive
+        while True:
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        async with clients_lock:
-            clients.discard(websocket)
-
-@app.post("/send")
-async def send_message(request: dict):
-    """
-    Send a message to all connected WebSocket clients.
-    The request should contain 'number', 'set', and 'value'.
-    """
-    global broadcasting
-    broadcasting = False
-    async with clients_lock:
-        disconnected = set()
-        for client in clients:
-            try:
-                await client.send_json(request)  # Directly send the request to all clients
-            except:
-                disconnected.add(client)
-        clients.difference_update(disconnected)
-    return JSONResponse(content={"status": "sent"})
-
-async def broadcast_numbers():
-    while True:
-        await broadcast_event.wait()
-        if broadcasting:
-            try:
-                url = "https://www.set.or.th/th/home"
-                response = requests.get(url, timeout=10)
-                soup = BeautifulSoup(response.content, "html.parser")
-
-                # Find the SET value
-                set_td = soup.find("td", class_="title-symbol", string=lambda text: text and "SET" in text)
-                set_value = None
-                value_col = None
-
-                if set_td:
-                    value_td = set_td.find_next_sibling("td")
-                    if value_td:
-                        span = value_td.find("span")
-                        if span:
-                            set_value = span.get_text(strip=True)
-
-                    # The 5th following sibling (index 3) for value column
-                    value_td_list = set_td.find_next_siblings("td")
-                    if len(value_td_list) >= 4:
-                        value_col = value_td_list[3].get_text(strip=True)
-
-                last_digit_set = set_value[-1] if set_value else ""
-                digit_before_decimal = value_col.split('.')[0][-1] if value_col and '.' in value_col else ""
-
-                number = last_digit_set + digit_before_decimal
-                message = {
-                    "set": set_value,
-                    "value": value_col,
-                    "number": number
-                }
-
-                async with clients_lock:
-                    disconnected = set()
-                    for client in clients:
-                        try:
-                            await client.send_json(message)
-                        except:
-                            disconnected.add(client)
-                    clients.difference_update(disconnected)
-
-            except Exception as e:
-                print("Scraping error:", str(e))
-
-        await asyncio.sleep(10)
+        connected_clients.remove(websocket)
+    except Exception:
+        connected_clients.remove(websocket)
 
 @app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(broadcast_numbers())
+async def start_background_task():
+    async def stream_task():
+        while True:
+            if is_running:
+                data = await fetch_set_data()
+                disconnected = set()
+                for client in connected_clients:
+                    try:
+                        await client.send_json(data)
+                    except Exception:
+                        disconnected.add(client)
+                connected_clients.difference_update(disconnected)
+            await asyncio.sleep(10)
+    asyncio.create_task(stream_task())
+
+async def fetch_set_data():
+    try:
+        response = requests.get("https://www.set.or.th/th/home", timeout=10)
+        soup = BeautifulSoup(response.content, "html.parser")
+        symbol_cell = soup.find("td", class_="title-symbol", string=lambda x: "SET" in x if x else False)
+        if not symbol_cell:
+            return {"error": "symbol not found"}
+
+        value = symbol_cell.find_next_sibling("td").span.text.strip()
+        change = symbol_cell.find_next_siblings("td")[3].text.strip()
+        number = value[-1] + change.split('.')[0][-1]
+        return {"set": value, "value": change, "number": number}
+    except Exception as e:
+        return {"error": "fetch failed", "detail": str(e)}

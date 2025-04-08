@@ -34,10 +34,26 @@ async def websocket_endpoint(websocket: WebSocket):
     async with clients_lock:
         clients.add(websocket)
     try:
-        await websocket.receive_text()  # Keep alive
+        await websocket.receive_text()  # Keep connection alive
     except WebSocketDisconnect:
         async with clients_lock:
             clients.discard(websocket)
+
+@app.post("/send")
+async def send_message(request: dict):
+    """
+    Send a message to all connected WebSocket clients.
+    The request should contain 'number', 'set', and 'value'.
+    """
+    async with clients_lock:
+        disconnected = set()
+        for client in clients:
+            try:
+                await client.send_json(request)  # Directly send the request to all clients
+            except:
+                disconnected.add(client)
+        clients.difference_update(disconnected)
+    return JSONResponse(content={"status": "sent"})
 
 async def broadcast_numbers():
     while True:

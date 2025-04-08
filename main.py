@@ -45,6 +45,8 @@ async def send_message(request: dict):
     Send a message to all connected WebSocket clients.
     The request should contain 'number', 'set', and 'value'.
     """
+    global broadcasting
+    broadcasting = False
     async with clients_lock:
         disconnected = set()
         for client in clients:

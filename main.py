@@ -1,7 +1,8 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 import asyncio
-import random
+import requests
+from bs4 import BeautifulSoup
 
 app = FastAPI()
 
@@ -33,7 +34,7 @@ async def websocket_endpoint(websocket: WebSocket):
     async with clients_lock:
         clients.add(websocket)
     try:
-        await websocket.receive_text()  # Keep connection alive
+        await websocket.receive_text()  # Keep alive
     except WebSocketDisconnect:
         async with clients_lock:
             clients.discard(websocket)
@@ -42,16 +43,50 @@ async def broadcast_numbers():
     while True:
         await broadcast_event.wait()
         if broadcasting:
-            number = f"{random.randint(0, 9)}{random.randint(0, 9)}"
-            message = {"number": number}
-            async with clients_lock:
-                disconnected = set()
-                for client in clients:
-                    try:
-                        await client.send_json(message)
-                    except:
-                        disconnected.add(client)
-                clients.difference_update(disconnected)
+            try:
+                url = "https://www.set.or.th/th/home"
+                response = requests.get(url, timeout=10)
+                soup = BeautifulSoup(response.content, "html.parser")
+
+                # Find the SET value
+                set_td = soup.find("td", class_="title-symbol", string=lambda text: text and "SET" in text)
+                set_value = None
+                value_col = None
+
+                if set_td:
+                    value_td = set_td.find_next_sibling("td")
+                    if value_td:
+                        span = value_td.find("span")
+                        if span:
+                            set_value = span.get_text(strip=True)
+
+                    # The 5th following sibling (index 3) for value column
+                    value_td_list = set_td.find_next_siblings("td")
+                    if len(value_td_list) >= 4:
+                        value_col = value_td_list[3].get_text(strip=True)
+
+                last_digit_set = set_value[-1] if set_value else ""
+                digit_before_decimal = value_col.split('.')[0][-1] if value_col and '.' in value_col else ""
+
+                number = last_digit_set + digit_before_decimal
+                message = {
+                    "set": set_value,
+                    "value": value_col,
+                    "number": number
+                }
+
+                async with clients_lock:
+                    disconnected = set()
+                    for client in clients:
+                        try:
+                            await client.send_json(message)
+                        except:
+                            disconnected.add(client)
+                    clients.difference_update(disconnected)
+
+            except Exception as e:
+                print("Scraping error:", str(e))
+
         await asyncio.sleep(10)
 
 @app.on_event("startup")

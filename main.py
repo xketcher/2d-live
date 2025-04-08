@@ -10,45 +10,45 @@ is_running = False
 API_TOKEN = "zuA95eBBJZoWzsqlNQQKxgnmCM6kmgwsZbZFoSE"
 WS_TOKEN = "uwfHwIbn5rVHWWjEHeQKlM7VNMJC9LUggdJBvbQHw7dc"
 
-# Dependency to check API token
-async def verify_api_token(authorization: Optional[str] = Header(None)):
-    if authorization != f"Bearer {API_TOKEN}":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API token")
+async def verify_token(header: Optional[str], token: str):
+    if header != f"Bearer {token}":
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-# Dependency to check WS token for WebSocket connections
-async def verify_ws_token(authorization: Optional[str] = Header(None)):
-    if authorization != f"Bearer {WS_TOKEN}":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid WebSocket token")
-
-@app.get("/ping", dependencies=[Depends(verify_api_token)])
-async def ping(): 
+@app.get("/ping")
+async def ping(auth: str = Header(None)):
+    await verify_token(auth, API_TOKEN)
     return {"status": "ok"}
 
-@app.get("/start", dependencies=[Depends(verify_api_token)])
-async def start(): 
+@app.get("/start")
+async def start(auth: str = Header(None)):
+    await verify_token(auth, API_TOKEN)
     global is_running
     is_running = True
     return {"status": "started"}
 
-@app.get("/stop", dependencies=[Depends(verify_api_token)])
-async def stop(): 
+@app.get("/stop")
+async def stop(auth: str = Header(None)):
+    await verify_token(auth, API_TOKEN)
     global is_running
     is_running = False
     return {"status": "stopped"}
 
-@app.get("/get", dependencies=[Depends(verify_api_token)])
-async def get(): 
+@app.get("/get")
+async def get(auth: str = Header(None)):
+    await verify_token(auth, API_TOKEN)
     return await fetch_set_data()
 
-@app.post("/send", dependencies=[Depends(verify_api_token)])
-async def send(data: dict):
+@app.post("/send")
+async def send(data: dict, auth: str = Header(None)):
+    await verify_token(auth, API_TOKEN)
     global is_running
     is_running = False
     await broadcast(data)
     return {"status": "sent", "connected": len(clients)}
 
 @app.websocket("/ws")
-async def websocket(ws: WebSocket, authorization: str = Depends(verify_ws_token)):
+async def websocket(ws: WebSocket, authorization: str = Header(None)):
+    await verify_token(authorization, WS_TOKEN)
     await ws.accept()
     clients.add(ws)
     try:
@@ -71,24 +71,20 @@ async def stream_task():
         await asyncio.sleep(10)
 
 async def broadcast(data: dict):
-    disconnected = set()
-    for ws in clients:
+    for ws in clients.copy():
         try:
             await ws.send_json(data)
         except:
-            disconnected.add(ws)
-    clients.difference_update(disconnected)
+            clients.discard(ws)
 
 async def fetch_set_data():
-    url = "https://www.set.or.th/th/home"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as resp:
+            async with session.get("https://www.set.or.th/th/home", timeout=10) as resp:
                 html = await resp.text()
         soup = BeautifulSoup(html, "html.parser")
         cell = soup.find("td", class_="title-symbol", string=lambda x: "SET" in x if x else False)
-        if not cell:
-            return {"error": "symbol not found"}
+        if not cell: return {"error": "symbol not found"}
         value = cell.find_next_sibling("td").span.text.strip()
         change = cell.find_next_siblings("td")[3].text.strip()
         return {

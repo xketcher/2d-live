@@ -15,31 +15,31 @@ async def verify_token(header: Optional[str], token: str):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 @app.get("/ping")
-async def ping(auth: str = Header(None)):
+async def ping(auth: str = Header(None, alias="Authorization")):
     await verify_token(auth, API_TOKEN)
     return {"status": "ok"}
 
 @app.get("/start")
-async def start(auth: str = Header(None)):
+async def start(auth: str = Header(None, alias="Authorization")):
     await verify_token(auth, API_TOKEN)
     global is_running
     is_running = True
     return {"status": "started"}
 
 @app.get("/stop")
-async def stop(auth: str = Header(None)):
+async def stop(auth: str = Header(None, alias="Authorization")):
     await verify_token(auth, API_TOKEN)
     global is_running
     is_running = False
     return {"status": "stopped"}
 
 @app.get("/get")
-async def get(auth: str = Header(None)):
+async def get(auth: str = Header(None, alias="Authorization")):
     await verify_token(auth, API_TOKEN)
     return await fetch_set_data()
 
 @app.post("/send")
-async def send(data: dict, auth: str = Header(None)):
+async def send(data: dict, auth: str = Header(None, alias="Authorization")):
     await verify_token(auth, API_TOKEN)
     global is_running
     is_running = False
@@ -47,7 +47,7 @@ async def send(data: dict, auth: str = Header(None)):
     return {"status": "sent", "connected": len(clients)}
 
 @app.websocket("/ws")
-async def websocket(ws: WebSocket, authorization: str = Header(None)):
+async def websocket(ws: WebSocket, authorization: str = Header(None, alias="Authorization")):
     await verify_token(authorization, WS_TOKEN)
     await ws.accept()
     clients.add(ws)

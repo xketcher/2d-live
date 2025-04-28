@@ -19,6 +19,10 @@ async def ping(auth: str = Header(None, alias="Authorization")):
     await verify_token(auth, API_TOKEN)
     return {"status": "ok"}
 
+@app.get("/")
+async def root():
+    return {"message": "Server is running!"}
+
 @app.get("/start")
 async def start(auth: str = Header(None, alias="Authorization")):
     await verify_token(auth, API_TOKEN)

@@ -106,7 +106,7 @@ async def fetch_set_data():
             # Determine type
             hour = now.hour
             minute = now.minute
-            if (hour == 16 and minute >= 36) or (hour < 12 or (hour == 12 and minute <= 5)):
+            if (hour == 12 and minute <= 5) or (hour < 12) or (hour == 16 and minute >= 36) or (hour > 16):
                 type_val = "12:01 PM"
             else:
                 type_val = "04:40 PM"

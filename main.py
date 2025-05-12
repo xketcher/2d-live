@@ -23,6 +23,15 @@ def ping(Authorization: str = Header()):
     auth_check(Authorization, API_TOKEN)
     return {"ok": True}
 
+@app.get("/dashboard")
+def dashboard(Authorization: str = Header()):
+    auth_check(Authorization, API_TOKEN)
+    return {
+        "live_total_client": len(rooms.get("live", [])),
+        "chat_total_client": len(rooms.get("chat", [])),
+        "server_status": "running" if is_running else "stopped"
+    }
+
 @app.get("/start")
 def start(Authorization: str = Header()):
     auth_check(Authorization, API_TOKEN)

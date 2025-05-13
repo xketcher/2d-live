@@ -2,7 +2,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPExcepti
 from typing import Dict, Set
 from bs4 import BeautifulSoup
 from datetime import datetime
-import pytz, aiohttp, asyncio
+import pytz, aiohttp, asyncio, psutil
 
 app = FastAPI()
 
@@ -67,6 +67,35 @@ async def send(room: str, data: dict, Authorization: str = Header()):
 def total(room: str, Authorization: str = Header()):
     auth_check(Authorization, API_TOKEN)
     return {"room": room, "clients": len(rooms.get(room, []))}
+
+@app.get("/usages")
+def usages(Authorization: str = Header()):
+    auth_check(Authorization, API_TOKEN)
+
+    vm = psutil.virtual_memory()
+    disk = psutil.disk_usage('/')
+
+    def format_bytes(size):
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size < 1024:
+                return f"{size:.0f}{unit}"
+            size /= 1024
+        return f"{size:.0f}TB"
+
+    return {
+        "total_cpu": format_bytes(vm.total),
+        "used_cpu": format_bytes(vm.used),
+        "available_cpu": format_bytes(vm.available),
+        "used_cpu_percent": f"{vm.percent}%",
+        "total_ram": format_bytes(vm.total),
+        "used_ram": format_bytes(vm.used),
+        "available_ram": format_bytes(vm.available),
+        "used_ram_percent": f"{vm.percent}%",
+        "total_ssd": format_bytes(disk.total),
+        "used_ssd": format_bytes(disk.used),
+        "available_ssd": format_bytes(disk.free),
+        "used_ssd_percent": f"{disk.percent}%"
+    }
 
 @app.websocket("/ws/{room}")
 async def ws(ws: WebSocket, room: str, Authorization: str = Header()):

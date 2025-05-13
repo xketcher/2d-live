@@ -116,31 +116,29 @@ async def broadcast(room: str, data: dict):
 
 async def fetch_set_data():
     try:
-        async with aiohttp.ClientSession() as s:
-            r = await s.get("https://www.set.or.th/th/home", timeout=10)
+        async with session.get("https://www.set.or.th/th/home", timeout=10) as r:
             html = await r.text()
-            soup = BeautifulSoup(html, "html.parser")
-            cell = soup.find("td", class_="title-symbol", string=lambda x: "SET" in x if x else False)
-            val = cell.find_next_sibling("td").span.text.strip()
-            chg = cell.find_next_siblings("td")[3].text.strip()
-            now = datetime.now(pytz.timezone("Asia/Yangon"))
-            dt = now.strftime("%Y-%m-%d %I:%M:%S %p")
+        soup = BeautifulSoup(html, "html.parser")
+        cell = soup.find("td", class_="title-symbol", string=lambda x: "SET" in x if x else False)
+        val = cell.find_next_sibling("td").span.text.strip()
+        chg = cell.find_next_siblings("td")[3].text.strip()
 
-            # Determine type
-            hour = now.hour
-            minute = now.minute
-            if (hour == 12 and minute <= 5) or (hour < 12) or (hour == 16 and minute >= 36) or (hour > 16):
-                type_val = "12:01 PM"
-            else:
-                type_val = "04:40 PM"
+        now = datetime.now(pytz.timezone("Asia/Yangon"))
+        dt = now.strftime("%Y-%m-%d %I:%M:%S %p")
 
-            return {
-                "set": val,
-                "value": chg,
-                "twod": val[-1] + chg.split('.')[0][-1],
-                "date": dt,
-                "type": type_val
-            }
+        hour = now.hour
+        minute = now.minute
+        if (hour == 12 and minute <= 5) or (hour < 12) or (hour == 16 and minute >= 36) or (hour > 16):
+            type_val = "12:01 PM"
+        else:
+            type_val = "04:30 PM"
+
+        return {
+            "set": val,
+            "value": chg,
+            "twod": val[-1] + chg.split('.')[0][-1],
+            "date": dt,
+            "type": type_val
+        }
     except Exception as e:
         return {"error": str(e)}
-    

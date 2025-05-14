@@ -54,13 +54,13 @@ def status(Authorization: str = Header()):
 @app.get("/get")
 async def get(Authorization: str = Header()):
     auth_check(Authorization, API_TOKEN)
+    global is_running
+    is_running = False
     return await fetch_set_data()
 
 @app.post("/send/{room}")
 async def send(room: str, data: dict, Authorization: str = Header()):
     auth_check(Authorization, API_TOKEN)
-    global is_running
-    is_running = False
     return {"sent": await broadcast(room, data)}
 
 @app.get("/total_client/{room}")
